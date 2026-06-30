@@ -1,0 +1,80 @@
+APPLE INC.
+FORM 10-K ANNUAL REPORT
+Fiscal Year Ended September 30, 2023
+
+PART I
+
+Item 1. Business
+
+Apple Inc. designs, manufactures, and markets smartphones, personal computers, tablets, wearables, and accessories. The Company's products include iPhone, Mac, iPad, Apple Watch, and Apple TV. Apple also sells a range of related services including Apple Music, iCloud, Apple TV+, Apple Arcade, and Apple Pay.
+
+In fiscal 2023, Apple generated total net sales of $383.3 billion, an increase of approximately $17.6 billion or 5% compared to fiscal 2022. The growth was primarily driven by strong performance in the Services segment and iPhone sales.
+
+The Company operates in various geographic segments including the Americas, Europe, Greater China, Japan, and Rest of Asia Pacific. Apple sells its products through its direct sales channels, retail stores, online stores, and through third-party resellers.
+
+Item 1A. Risk Factors
+
+The Company faces several key risks:
+
+1. Competition: Apple operates in highly competitive markets characterized by aggressive pricing practices, rapid technological change, and frequent product introductions. Competitors include Samsung, Google, Microsoft, and other technology companies.
+
+2. Supply Chain Risk: The Company relies on a limited number of suppliers for critical components including semiconductors, displays, and memory chips. Disruptions in the supply chain could materially affect operations.
+
+3. Global Economic Conditions: Economic downturns, inflation, currency fluctuations, and changes in consumer spending patterns could adversely affect demand for Apple products.
+
+4. Regulatory Risk: The Company is subject to various laws and regulations including antitrust, privacy, data protection, and environmental regulations. Changes in regulatory requirements could increase compliance costs.
+
+5. Intellectual Property: Apple's ability to compete depends on its intellectual property portfolio. The Company faces patent litigation and claims of infringement from third parties.
+
+6. Cybersecurity: The Company is subject to cybersecurity threats including data breaches, malware, and unauthorized access to systems and data.
+
+Item 7. Management's Discussion and Analysis of Financial Condition and Results of Operations
+
+Net Sales: Total net sales were $383.3 billion in fiscal 2023, compared to $365.8 billion in fiscal 2022, an increase of 5%. Products net sales were $291.1 billion, while Services net sales were $92.2 billion.
+
+Products Revenue: iPhone revenue was $200.6 billion, representing 52% of total net sales. Mac revenue was $29.4 billion, iPad revenue was $28.3 billion, Wearables and Accessories revenue was $32.8 billion.
+
+Services Revenue: Services revenue grew 9% year-over-year, driven by growth in App Store, Apple Music, iCloud, and Apple TV+ subscriptions. Services now represent 24% of total net sales.
+
+Gross Margin: The Company's gross margin was 44.1% in fiscal 2023, compared to 43.3% in fiscal 2022. The increase was primarily due to a favorable product mix and lower commodity costs.
+
+Operating Expenses: Research and development expenses were $29.9 billion, an increase of $4.8 billion or 19% compared to fiscal 2022. Selling, general and administrative expenses were $24.9 billion.
+
+Operating Income: Operating income was $114.3 billion, representing an operating margin of 29.8%. Net income was $96.9 billion, with diluted earnings per share of $6.13.
+
+Cash and Capital Resources: The Company had $162.1 billion in cash, cash equivalents, and marketable securities as of September 30, 2023. Total debt was $111.1 billion, including current and long-term debt.
+
+Shareholder Returns: Apple returned over $77 billion to shareholders during fiscal 2023 through share repurchases and dividend payments. The Board of Directors authorized an additional $90 billion share repurchase program.
+
+Forward-Looking Statements: Management expects continued growth in Services revenue, driven by expanding subscriptions and new product launches. The Company plans to invest heavily in artificial intelligence and machine learning capabilities across its product ecosystem. However, macroeconomic uncertainty including inflation and potential recession could impact consumer demand.
+
+Item 8. Financial Statements
+
+Consolidated Statements of Operations (in millions):
+  Net sales: $383,285
+  Cost of sales: $214,219
+  Gross margin: $169,066
+  Operating expenses: $54,847
+  Operating income: $114,301
+  Other income/(expense): -$680
+  Income before provision for income taxes: $113,621
+  Provision for income taxes: $16,741
+  Net income: $96,930
+  Diluted earnings per share: $6.13
+
+Consolidated Balance Sheets (in millions):
+  Total current assets: $143,566
+  Total non-current assets: $196,841
+  Total assets: $352,755
+  Total current liabilities: $145,308
+  Total non-current liabilities: $127,984
+  Total liabilities: $273,292
+  Total shareholders' equity: $62,146
+
+Consolidated Statements of Cash Flows (in millions):
+  Cash generated by operating activities: $110,543
+  Capital expenditures: -$10,959
+  Payments for acquisition of PP&E: -$10,959
+  Dividends paid: -$15,034
+  Share repurchases: -$77,550
+  Net cash used in financing activities: -$108,737

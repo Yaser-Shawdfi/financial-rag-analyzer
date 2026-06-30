@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Financial RAG Analyzer</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #222631;
+    --border: #2d3142;
+    --text: #e4e4e7;
+    --text-muted: #8b8d97;
+    --accent: #4ade80;
+    --accent-dim: #22c55e;
+    --danger: #f87171;
+    --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    --mono: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); height: 100vh; display: flex; overflow: hidden; }
+  
+  /* Sidebar */
+  .sidebar { width: 300px; min-width: 300px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+  .sidebar-header { padding: 20px; border-bottom: 1px solid var(--border); }
+  .sidebar-header h1 { font-size: 16px; font-weight: 700; color: var(--accent); letter-spacing: 0.5px; }
+  .sidebar-header p { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+  
+  .upload-zone { padding: 16px 20px; border-bottom: 1px solid var(--border); }
+  .upload-zone .drop-area { border: 2px dashed var(--border); border-radius: 8px; padding: 20px; text-align: center; cursor: pointer; transition: border-color 0.2s; }
+  .upload-zone .drop-area:hover, .upload-zone .drop-area.dragover { border-color: var(--accent); background: rgba(74,222,128,0.05); }
+  .upload-zone .drop-area p { font-size: 13px; color: var(--text-muted); }
+  .upload-zone .drop-area .icon { font-size: 28px; margin-bottom: 8px; }
+  .upload-zone input[type=file] { display: none; }
+  
+  .upload-progress { padding: 8px 20px; font-size: 12px; color: var(--accent); display: none; }
+  .upload-progress.active { display: block; }
+  
+  .doc-list { flex: 1; overflow-y: auto; padding: 12px 20px; }
+  .doc-list h3 { font-size: 12px; text-transform: uppercase; color: var(--text-muted); letter-spacing: 1px; margin-bottom: 12px; }
+  .doc-item { background: var(--surface2); border-radius: 6px; padding: 10px 12px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+  .doc-item .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .doc-item .chunks { color: var(--text-muted); font-size: 11px; margin-left: 8px; }
+  .doc-item .del-btn { background: none; border: none; color: var(--danger); cursor: pointer; padding: 2px 6px; font-size: 14px; border-radius: 4px; margin-left: 8px; }
+  .doc-item .del-btn:hover { background: rgba(248,113,113,0.1); }
+  .no-docs { color: var(--text-muted); font-size: 12px; font-style: italic; }
+  
+  .status-bar { padding: 12px 20px; border-top: 1px solid var(--border); font-size: 11px; color: var(--text-muted); }
+  .status-bar .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-right: 6px; }
+  .status-bar .dot.off { background: var(--danger); }
+  
+  /* Chat area */
+  .chat-area { flex: 1; display: flex; flex-direction: column; }
+  .chat-header { padding: 16px 24px; border-bottom: 1px solid var(--border); background: var(--surface); }
+  .chat-header h2 { font-size: 15px; font-weight: 600; }
+  .chat-header p { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  
+  .messages { flex: 1; overflow-y: auto; padding: 24px; }
+  .msg { margin-bottom: 20px; max-width: 80%; }
+  .msg.user { margin-left: auto; }
+  .msg .role { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 1px; }
+  .msg .bubble { padding: 12px 16px; border-radius: 10px; font-size: 14px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+  .msg.user .bubble { background: var(--accent-dim); color: #0f1117; }
+  .msg.assistant .bubble { background: var(--surface2); border: 1px solid var(--border); }
+  .msg.assistant .bubble .meta { font-size: 11px; color: var(--text-muted); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+  .msg.assistant .sources { margin-top: 8px; }
+  .msg.assistant .source-chip { display: inline-block; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 2px 8px; margin: 2px; font-size: 11px; color: var(--accent); cursor: pointer; }
+  .msg.assistant .source-detail { margin-top: 6px; background: var(--bg); border-radius: 6px; padding: 10px; font-size: 12px; color: var(--text-muted); display: none; border: 1px solid var(--border); }
+  .msg.assistant .source-detail.show { display: block; }
+  
+  .typing { display: inline-block; }
+  .typing span { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); margin: 0 2px; animation: blink 1.4s infinite both; }
+  .typing span:nth-child(2) { animation-delay: 0.2s; }
+  .typing span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes blink { 0%,80%,100% { opacity: 0.2; } 40% { opacity: 1; } }
+  
+  .input-area { padding: 16px 24px; border-top: 1px solid var(--border); background: var(--surface); display: flex; gap: 12px; }
+  .input-area input { flex: 1; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; color: var(--text); font-size: 14px; font-family: var(--font); outline: none; transition: border-color 0.2s; }
+  .input-area input:focus { border-color: var(--accent); }
+  .input-area input::placeholder { color: var(--text-muted); }
+  .input-area button { background: var(--accent-dim); color: #0f1117; border: none; border-radius: 8px; padding: 12px 24px; font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
+  .input-area button:hover { opacity: 0.9; }
+  .input-area button:disabled { opacity: 0.4; cursor: not-allowed; }
+  
+  .example-questions { padding: 8px 24px 16px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .example-questions .ex { background: var(--surface2); border: 1px solid var(--border); border-radius: 16px; padding: 6px 14px; font-size: 12px; color: var(--text-muted); cursor: pointer; transition: all 0.2s; }
+  .example-questions .ex:hover { border-color: var(--accent); color: var(--text); }
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <div class="sidebar-header">
+    <h1>FINANCIAL RAG ANALYZER</h1>
+    <p>Upload financial reports and ask questions</p>
+  </div>
+  
+  <div class="upload-zone">
+    <div class="drop-area" id="dropArea" onclick="document.getElementById('fileInput').click()">
+      <div class="icon">+</div>
+      <p>Click or drag a file here</p>
+      <p style="margin-top:4px;font-size:11px;">PDF, TXT, HTML</p>
+    </div>
+    <input type="file" id="fileInput" accept=".pdf,.txt,.html,.htm">
+  </div>
+  
+  <div class="upload-progress" id="uploadProgress">Processing document...</div>
+  
+  <div class="doc-list">
+    <h3>Documents</h3>
+    <div id="docList">
+      <div class="no-docs">No documents uploaded yet</div>
+    </div>
+  </div>
+  
+  <div class="status-bar">
+    <span class="dot" id="statusDot"></span>
+    <span id="statusText">Checking Ollama...</span>
+  </div>
+</div>
+
+<div class="chat-area">
+  <div class="chat-header">
+    <h2>Financial Document Q&A</h2>
+    <p>Ask questions about uploaded financial reports. Answers are grounded in document content with source citations.</p>
+  </div>
+  
+  <div class="messages" id="messages">
+    <div class="msg assistant">
+      <div class="role">Assistant</div>
+      <div class="bubble">
+        Welcome to the Financial RAG Analyzer. Upload a financial report (PDF, TXT, or HTML) from the sidebar, then ask questions about it. I will retrieve relevant passages and answer with source citations.
+      </div>
+    </div>
+  </div>
+  
+  <div class="example-questions" id="exampleQuestions">
+    <div class="ex" onclick="fillQuestion('What are the main risk factors?')">What are the main risk factors?</div>
+    <div class="ex" onclick="fillQuestion('Summarize the financial performance')">Summarize the financial performance</div>
+    <div class="ex" onclick="fillQuestion('What is the total revenue?')">What is the total revenue?</div>
+    <div class="ex" onclick="fillQuestion('How does management view future growth?')">How does management view future growth?</div>
+  </div>
+  
+  <div class="input-area">
+    <input type="text" id="questionInput" placeholder="Ask a question about your financial documents..." onkeypress="if(event.key==='Enter')sendQuestion()">
+    <button id="sendBtn" onclick="sendQuestion()">Send</button>
+  </div>
+</div>
+
+<script>
+const API = '';
+let isProcessing = false;
+
+// -- Status check --
+async function checkStatus() {
+  try {
+    const r = await fetch(API + '/api/health');
+    const d = await r.json();
+    document.getElementById('statusDot').classList.remove('off');
+    document.getElementById('statusText').textContent = 
+      'Ollama OK | ' + d.documents + ' docs | ' + d.total_chunks + ' chunks | LLM: ' + d.llm_model;
+  } catch(e) {
+    document.getElementById('statusDot').classList.add('off');
+    document.getElementById('statusText').textContent = 'Server offline';
+  }
+}
+checkStatus();
+setInterval(checkStatus, 10000);
+
+// -- Document list --
+async function loadDocs() {
+  try {
+    const r = await fetch(API + '/api/docs');
+    const d = await r.json();
+    const list = document.getElementById('docList');
+    if (d.documents.length === 0) {
+      list.innerHTML = '<div class="no-docs">No documents uploaded yet</div>';
+    } else {
+      list.innerHTML = d.documents.map(doc => 
+        '<div class="doc-item"><span class="name">' + escapeHtml(doc.name) + '</span>' +
+        '<span class="chunks">' + doc.chunks + ' chunks</span>' +
+        '<button class="del-btn" onclick="deleteDoc(\'' + escapeHtml(doc.name) + '\')">x</button></div>'
+      ).join('');
+    }
+  } catch(e) { console.error(e); }
+}
+loadDocs();
+
+async function deleteDoc(name) {
+  await fetch(API + '/api/delete/' + encodeURIComponent(name), { method: 'DELETE' });
+  loadDocs();
+  checkStatus();
+}
+
+// -- File upload --
+const fileInput = document.getElementById('fileInput');
+const dropArea = document.getElementById('dropArea');
+
+fileInput.addEventListener('change', (e) => {
+  if (e.target.files.length > 0) uploadFile(e.target.files[0]);
+});
+
+dropArea.addEventListener('dragover', (e) => { e.preventDefault(); dropArea.classList.add('dragover'); });
+dropArea.addEventListener('dragleave', () => dropArea.classList.remove('dragover'));
+dropArea.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropArea.classList.remove('dragover');
+  if (e.dataTransfer.files.length > 0) uploadFile(e.dataTransfer.files[0]);
+});
+
+async function uploadFile(file) {
+  const prog = document.getElementById('uploadProgress');
+  prog.classList.add('active');
+  prog.textContent = 'Processing ' + file.name + '...';
+  
+  const formData = new FormData();
+  formData.append('file', file);
+  
+  try {
+    const r = await fetch(API + '/api/upload', { method: 'POST', body: formData });
+    if (!r.ok) {
+      const err = await r.text();
+      prog.textContent = 'Error: ' + err;
+      setTimeout(() => prog.classList.remove('active'), 3000);
+      return;
+    }
+    const d = await r.json();
+    prog.textContent = 'Done: ' + d.chunks + ' chunks in ' + d.elapsed_ms + 'ms';
+    setTimeout(() => prog.classList.remove('active'), 3000);
+    loadDocs();
+    checkStatus();
+  } catch(e) {
+    prog.textContent = 'Upload failed: ' + e.message;
+    setTimeout(() => prog.classList.remove('active'), 3000);
+  }
+}
+
+// -- Chat --
+function fillQuestion(q) {
+  document.getElementById('questionInput').value = q;
+  document.getElementById('questionInput').focus();
+}
+
+async function sendQuestion() {
+  const input = document.getElementById('questionInput');
+  const q = input.value.trim();
+  if (!q || isProcessing) return;
+  
+  isProcessing = true;
+  document.getElementById('sendBtn').disabled = true;
+  input.value = '';
+  
+  // Add user message
+  addMessage('user', q);
+  
+  // Add typing indicator
+  const msgEl = addMessage('assistant', '<div class="typing"><span></span><span></span><span></span></div>');
+  
+  try {
+    const r = await fetch(API + '/api/ask', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: q })
+    });
+    
+    if (!r.ok) {
+      const err = await r.text();
+      msgEl.querySelector('.bubble').innerHTML = 'Error: ' + err;
+      return;
+    }
+    
+    const d = await r.json();
+    let html = escapeHtml(d.answer);
+    
+    if (d.sources && d.sources.length > 0) {
+      html += '<div class="meta">Retrieved ' + d.sources.length + ' sources | ' + d.elapsed_ms + 'ms</div>';
+      html += '<div class="sources">';
+      d.sources.forEach((src, i) => {
+        html += '<span class="source-chip" onclick="toggleSource(' + i + ', this)">[' + (i+1) + '] ' + escapeHtml(src.chunk.section) + ' (' + src.score.toFixed(3) + ')</span>';
+        html += '<div class="source-detail" id="src' + i + '">' + escapeHtml(src.chunk.text.substring(0, 500)) + (src.chunk.text.length > 500 ? '...' : '') + '</div>';
+      });
+      html += '</div>';
+    }
+    
+    msgEl.querySelector('.bubble').innerHTML = html;
+  } catch(e) {
+    msgEl.querySelector('.bubble').innerHTML = 'Error: ' + escapeHtml(e.message);
+  } finally {
+    isProcessing = false;
+    document.getElementById('sendBtn').disabled = false;
+  }
+}
+
+function addMessage(role, content) {
+  const messages = document.getElementById('messages');
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+  div.innerHTML = '<div class="role">' + (role === 'user' ? 'You' : 'Assistant') + '</div><div class="bubble">' + content + '</div>';
+  messages.appendChild(div);
+  messages.scrollTop = messages.scrollHeight;
+  return div;
+}
+
+function toggleSource(i, el) {
+  const detail = document.getElementById('src' + i);
+  detail.classList.toggle('show');
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str || '';
+  return div.innerHTML;
+}
+</script>
+</body>
+</html>
