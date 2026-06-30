@@ -1,6 +1,8 @@
-use std::collections::HashMap;
+use std::sync::Arc;
 
+use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
+use tokio::sync::RwLock;
 
 use crate::document_processor::Chunk;
 
@@ -10,60 +12,107 @@ pub struct ScoredChunk {
     pub score: f32,
 }
 
+#[derive(Serialize, Deserialize)]
+struct StoredEntry {
+    chunk: Chunk,
+    vector: Vec<f32>,
+}
+
+const TABLE: TableDefinition<&str, Vec<u8>> = TableDefinition::new("vectors");
+
 pub struct VectorStore {
-    /// Stores chunks and their embedding vectors
-    entries: Vec<(Chunk, Vec<f32>)>,
-    /// Maps source document name -> count of chunks
-    doc_counts: HashMap<String, usize>,
+    db: Arc<Database>,
+    cache: Arc<RwLock<Vec<(Chunk, Vec<f32>)>>>,
 }
 
 impl VectorStore {
-    pub fn new() -> Self {
-        Self {
-            entries: Vec::new(),
-            doc_counts: HashMap::new(),
-        }
-    }
-
-    /// Add chunks with their embedding vectors.
-    pub fn add(&mut self, chunks: Vec<Chunk>, vectors: Vec<Vec<f32>>) {
-        let source = chunks
-            .first()
-            .map(|c| c.source.clone())
-            .unwrap_or_default();
-
-        let count = chunks.len();
-        for (chunk, vec) in chunks.into_iter().zip(vectors.into_iter()) {
-            self.entries.push((chunk, vec));
+    pub fn new(path: &str) -> anyhow::Result<Self> {
+        if let Some(parent) = std::path::Path::new(path).parent() {
+            std::fs::create_dir_all(parent)?;
         }
 
-        *self.doc_counts.entry(source).or_insert(0) += count;
+        let db = Database::create(path)?;
+        let db_arc = Arc::new(db);
+
+        {
+            let txn = db_arc.begin_write()?;
+            let _ = txn.open_table(TABLE)?;
+            txn.commit()?;
+        }
+
+        let mut entries = Vec::new();
+        {
+            let txn = db_arc.begin_read()?;
+            if let Ok(table) = txn.open_table(TABLE) {
+                for item in table.iter()? {
+                    let (_key, value) = item?;
+                    let bytes = value.value();
+                    if let Ok(entry) = bincode::deserialize::<StoredEntry>(&bytes) {
+                        entries.push((entry.chunk, entry.vector));
+                    }
+                }
+            }
+        }
+
+        tracing::info!("Loaded {} vectors from redb", entries.len());
+
+        Ok(Self {
+            db: db_arc,
+            cache: Arc::new(RwLock::new(entries)),
+        })
     }
 
-    /// Remove all chunks from a given source document.
-    pub fn remove_document(&mut self, source: &str) -> usize {
-        let before = self.entries.len();
-        self.entries.retain(|(c, _)| c.source != source);
-        let removed = before - self.entries.len();
-        self.doc_counts.remove(source);
-        removed
+    pub async fn add(&self, chunks: Vec<Chunk>, vectors: Vec<Vec<f32>>) -> anyhow::Result<()> {
+        let txn = self.db.begin_write()?;
+        {
+            let mut table = txn.open_table(TABLE)?;
+            for (chunk, vector) in chunks.iter().zip(vectors.iter()) {
+                let entry = StoredEntry {
+                    chunk: chunk.clone(),
+                    vector: vector.clone(),
+                };
+                let bytes = bincode::serialize(&entry)?;
+                table.insert(chunk.id.as_str(), bytes)?;
+            }
+        }
+        txn.commit()?;
+
+        let mut cache = self.cache.write().await;
+        for (chunk, vector) in chunks.into_iter().zip(vectors.into_iter()) {
+            cache.push((chunk, vector));
+        }
+
+        Ok(())
     }
 
-    /// Search for top-K most similar chunks using cosine similarity.
-    pub fn search(&self, query_vec: &[f32], top_k: usize) -> Vec<ScoredChunk> {
-        let mut scored: Vec<ScoredChunk> = self
-            .entries
+    pub async fn search(
+        &self,
+        query_vec: &[f32],
+        top_k: usize,
+        min_score: f32,
+        source_filter: Option<&str>,
+    ) -> Vec<ScoredChunk> {
+        let cache = self.cache.read().await;
+
+        let mut scored: Vec<ScoredChunk> = cache
             .iter()
-            .map(|(chunk, vec)| {
-                let score = cosine_similarity(query_vec, vec);
+            .filter(|(chunk, _)| {
+                if let Some(filter) = source_filter {
+                    chunk.source == filter
+                } else {
+                    true
+                }
+            })
+            .map(|(chunk, vector)| {
+                let score = cosine_similarity(query_vec, vector);
                 ScoredChunk {
                     chunk: chunk.clone(),
                     score,
                 }
             })
+            .filter(|sc| sc.score >= min_score)
             .collect();
 
-        // Sort by score descending
         scored.sort_by(|a, b| {
             b.score
                 .partial_cmp(&a.score)
@@ -73,19 +122,60 @@ impl VectorStore {
         scored.into_iter().take(top_k).collect()
     }
 
-    pub fn doc_names(&self) -> Vec<String> {
-        self.doc_counts.keys().cloned().collect()
-    }
+    pub fn remove_document(&self, source: &str) -> usize {
+        let cache_keys: Vec<String> = {
+            let cache = self.cache.try_write();
+            match cache {
+                Ok(c) => c
+                    .iter()
+                    .filter(|(chunk, _)| chunk.source == source)
+                    .map(|(chunk, _)| chunk.id.clone())
+                    .collect(),
+                Err(_) => vec![],
+            }
+        };
 
-    pub fn total_chunks(&self) -> usize {
-        self.entries.len()
+        let removed = cache_keys.len();
+
+        if let Ok(txn) = self.db.begin_write() {
+            if let Ok(mut table) = txn.open_table(TABLE) {
+                for key in &cache_keys {
+                    let _ = table.remove(key.as_str());
+                }
+            }
+            let _ = txn.commit();
+        }
+
+        {
+            if let Ok(mut cache) = self.cache.try_write() {
+                cache.retain(|(chunk, _)| chunk.source != source);
+            }
+        }
+
+        removed
     }
 
     pub fn doc_info(&self) -> Vec<(String, usize)> {
-        self.doc_counts
-            .iter()
-            .map(|(k, v)| (k.clone(), *v))
-            .collect()
+        let cache = self.cache.try_read();
+        match cache {
+            Ok(c) => {
+                let mut counts: std::collections::HashMap<String, usize> =
+                    std::collections::HashMap::new();
+                for (chunk, _) in c.iter() {
+                    *counts.entry(chunk.source.clone()).or_insert(0) += 1;
+                }
+                counts.into_iter().collect()
+            }
+            Err(_) => vec![],
+        }
+    }
+
+    pub fn total_chunks(&self) -> usize {
+        self.cache.try_read().map(|c| c.len()).unwrap_or(0)
+    }
+
+    pub fn doc_names(&self) -> Vec<String> {
+        self.doc_info().into_iter().map(|(n, _)| n).collect()
     }
 }
 

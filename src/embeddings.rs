@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::config::OllamaConfig;
+
 #[derive(Serialize)]
 struct EmbedRequest {
     model: String,
@@ -12,33 +14,31 @@ struct EmbedResponse {
 }
 
 pub struct EmbeddingClient {
-    base_url: String,
-    model: String,
+    config: OllamaConfig,
     client: reqwest::Client,
 }
 
 impl EmbeddingClient {
-    pub fn new(base_url: String, model: String) -> Self {
+    pub fn new(config: OllamaConfig) -> Self {
+        let timeout = std::time::Duration::from_secs(config.request_timeout_secs);
         Self {
-            base_url,
-            model,
+            config,
             client: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(120))
+                .timeout(timeout)
                 .build()
                 .unwrap(),
         }
     }
 
-    /// Generate an embedding for a single text string via Ollama /api/embeddings.
     pub async fn embed(&self, text: &str) -> anyhow::Result<Vec<f32>> {
         let req = EmbedRequest {
-            model: self.model.clone(),
+            model: self.config.embedding_model.clone(),
             prompt: text.to_string(),
         };
 
         let resp = self
             .client
-            .post(format!("{}/api/embeddings", self.base_url))
+            .post(format!("{}/api/embeddings", self.config.url))
             .json(&req)
             .send()
             .await?;
@@ -53,16 +53,18 @@ impl EmbeddingClient {
         Ok(embed_resp.embedding)
     }
 
-    /// Batch embed multiple texts sequentially (Ollama processes one at a time).
     pub async fn embed_batch(&self, texts: &[&str]) -> anyhow::Result<Vec<Vec<f32>>> {
         let mut results = Vec::with_capacity(texts.len());
+        let batch_size = self.config.embedding_batch_size.max(1);
+
         for (i, text) in texts.iter().enumerate() {
             let emb = self.embed(text).await?;
             results.push(emb);
-            if (i + 1) % 10 == 0 {
+            if (i + 1) % batch_size == 0 {
                 tracing::info!("Embedded {}/{} chunks", i + 1, texts.len());
             }
         }
+
         Ok(results)
     }
 }

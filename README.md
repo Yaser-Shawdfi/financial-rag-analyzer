@@ -1,175 +1,208 @@
-# Financial RAG Analyzer
+# Financial RAG Analyzer - Enterprise Edition v2.0
 
 AI-Powered Financial Document Analyzer using Retrieval-Augmented Generation (RAG), built entirely in Rust.
 
 Upload financial reports (10-K, annual reports, PDF, TXT, HTML) and ask natural-language questions about them. The system retrieves relevant passages using vector similarity search and generates grounded answers with source citations via a local LLM.
 
+## Enterprise Features (v2.0)
+
+| Feature | Description |
+|---|---|
+| **Persistent Storage** | redb embedded database - survives restarts, no data loss |
+| **JWT Authentication** | Pure-Rust HMAC-SHA256 JWT tokens, configurable on/off |
+| **Rate Limiting** | Per-user request limits (configurable, default 60/min) |
+| **Async Document Queue** | Background worker pool processes uploads non-blocking |
+| **Streaming Responses** | SSE (Server-Sent Events) for token-by-token LLM output |
+| **Configurable** | TOML config file + environment variable overrides |
+| **Request Limits** | Body size limits, request timeouts |
+| **Structured Logging** | tracing crate with env-filter, JSON output support |
+| **Docker Ready** | Multi-stage Dockerfile + docker-compose with Ollama |
+| **Source Filtering** | Filter retrieval by document name |
+| **Job Status API** | Poll async document processing status |
+| **CORS** | Configurable per-origin or wildcard |
+| **Trace Layer** | HTTP request tracing middleware |
+
 ## Architecture
 
 ```
-Upload Flow:
-  File -> Text Extraction (PDF/HTML/TXT) -> Section-Aware Chunking (800 words, 150 overlap)
-       -> Embedding (nomic-embed-text via Ollama) -> Vector Store (in-memory cosine similarity)
+Upload Flow (Async):
+  File -> Extract Text -> Submit to Queue -> Worker Pool processes:
+    Chunk (800 words, 150 overlap) -> Embed (nomic-embed-text) -> Store (redb persistent)
 
 Query Flow:
-  Question -> Embed -> Cosine Similarity Search (top-5) -> Prompt Construction
-           -> LLM Generation (llama3.1:8b via Ollama) -> Answer + Source Citations
+  Question -> Embed -> Vector Search (top-K, cosine similarity) -> Prompt Construction
+           -> LLM Generation (llama3.1:8b) -> Answer + Source Citations
+
+Streaming Flow:
+  Question -> Embed -> Vector Search -> SSE Stream -> Token-by-token LLM output
 ```
 
 ## Tech Stack
 
 | Component | Technology |
 |---|---|
-| Language | Rust 1.96 (edition 2021) |
+| Language | Rust (edition 2021) |
 | Web Framework | Axum 0.7 (async, Tokio runtime) |
-| HTTP Client | Reqwest 0.12 |
+| Database | redb (pure-Rust embedded KV store) |
+| Auth | HMAC-SHA256 JWT (pure Rust, no C deps) |
 | PDF Extraction | pdf-extract 0.7 |
-| HTML Parsing | Regex-based tag stripping |
 | Embeddings | nomic-embed-text (via Ollama API) |
 | LLM | llama3.1:8b (via Ollama API) |
-| Vector Store | Custom in-memory with cosine similarity |
-| Frontend | Single-page HTML/JS (dark theme, no dependencies) |
+| Frontend | Single-page HTML/JS (dark theme, SSE support) |
+| Config | figment (TOML + env vars) |
+| Container | Docker multi-stage build |
 
 ## Prerequisites
 
 1. **Rust** (rustup): https://rustup.rs
 2. **Ollama** running locally with models:
    ```bash
-   ollama pull llama3.1:8b       # LLM for answer generation
-   ollama pull nomic-embed-text  # Embedding model
+   ollama pull llama3.1:8b
+   ollama pull nomic-embed-text
    ```
 
 ## How to Run
 
+### Option A: Direct
+
 ```bash
-# Build
 cargo build
-
-# Start the server (Ollama must be running on localhost:11434)
 cargo run
-
-# Open the UI in your browser
-# http://localhost:3000
+# Open http://localhost:3000
 ```
 
-### Environment Variables (optional)
+### Option B: Docker Compose
 
-| Variable | Default | Description |
-|---|---|---|
-| `BIND_ADDR` | `127.0.0.1:3000` | Server bind address |
-| `OLLAMA_URL` | `http://localhost:11434` | Ollama API URL |
-| `EMBEDDING_MODEL` | `nomic-embed-text` | Ollama embedding model |
-| `LLM_MODEL` | `llama3.1:8b` | Ollama LLM model |
-| `CHUNK_SIZE` | `800` | Words per chunk |
-| `CHUNK_OVERLAP` | `150` | Overlap words between chunks |
-| `TOP_K` | `5` | Number of chunks to retrieve |
+```bash
+docker-compose up -d
+# Server on http://localhost:3000
+# Ollama on http://localhost:11434
+# Pull models: docker exec -it <ollama-container> ollama pull llama3.1:8b
+```
+
+## Configuration
+
+Edit `config.toml` or override with environment variables prefixed `RAG_`:
+
+```bash
+RAG_SERVER_BIND_ADDR=0.0.0.0:8080
+RAG_AUTH_ENABLED=true
+RAG_AUTH_JWT_SECRET=your-secret-key
+RAG_OLLAMA_URL=http://ollama:11434
+```
+
+### Full Config Reference
+
+```toml
+[server]
+bind_addr = "127.0.0.1:3000"
+max_connections = 1000
+request_timeout_secs = 120
+max_body_size_mb = 100
+cors_origins = ["*"]
+
+[ollama]
+url = "http://localhost:11434"
+embedding_model = "nomic-embed-text"
+llm_model = "llama3.1:8b"
+embedding_batch_size = 10
+request_timeout_secs = 120
+
+[rag]
+chunk_size = 800
+chunk_overlap = 150
+top_k = 5
+min_score = 0.15
+max_context_tokens = 4096
+system_prompt = "..."
+
+[auth]
+enabled = false
+jwt_secret = "change-me-in-production"
+jwt_expiry_hours = 24
+rate_limit_per_minute = 60
+
+[storage]
+sled_path = "./data/vectors.sled"
+vector_cache_size_mb = 256
+```
 
 ## API Endpoints
 
 | Endpoint | Method | Description |
 |---|---|---|
 | `/` | GET | Chat UI (HTML) |
-| `/api/health` | GET | Health check with model info and chunk count |
+| `/api/health` | GET | Health check with version, model info, chunk count |
+| `/api/login` | POST | Get JWT token (`{"username":"admin"}`) |
 | `/api/docs` | GET | List uploaded documents |
-| `/api/upload` | POST | Upload file (multipart, PDF/TXT/HTML) |
-| `/api/ask` | POST | Ask a question (JSON body: `{"question": "..."}`) |
+| `/api/upload` | POST | Upload file (multipart) - returns job_id for async processing |
+| `/api/ask` | POST | Ask a question (JSON) - blocking response |
+| `/api/ask/stream` | POST | Ask a question - SSE streaming response |
+| `/api/job/:job_id` | GET | Check async document processing status |
 | `/api/delete/:name` | DELETE | Delete a document from the index |
-
-## Usage Examples
-
-### Upload a document
-```bash
-curl -F "file=@apple_10k.txt" http://localhost:3000/api/upload
-```
-
-Response:
-```json
-{"success": true, "document": "apple_10k.txt", "chunks": 8, "elapsed_ms": 44000}
-```
-
-### Ask a question
-```bash
-curl -X POST http://localhost:3000/api/ask \
-  -H "Content-Type: application/json" \
-  -d '{"question":"What are the main risk factors?"}'
-```
-
-Response:
-```json
-{
-  "answer": "According to [Source 1], the main risk factors are...",
-  "sources": [
-    {"chunk": {"section": "PART I", "text": "..."}, "score": 0.66},
-    {"chunk": {"section": "Body", "text": "..."}, "score": 0.42}
-  ],
-  "elapsed_ms": 62000
-}
-```
 
 ## Project Structure
 
 ```
 financial-rag/
 ├── Cargo.toml                 # Dependencies and package metadata
-├── .cargo/config.toml         # Linker configuration for Windows GNU target
+├── config.toml                # Default configuration
+├── Dockerfile                 # Multi-stage Docker build
+├── docker-compose.yml         # Docker Compose with Ollama
+├── .cargo/config.toml         # Linker configuration for Windows
 ├── src/
-│   ├── main.rs                # Entry point, server startup, shared state
-│   ├── config.rs              # Configuration from environment variables
-│   ├── document_processor.rs  # Text extraction (PDF/HTML/TXT) + chunking
+│   ├── main.rs                # Entry point, server startup
+│   ├── config.rs              # Structured config (figment: TOML + env)
+│   ├── auth.rs                # JWT auth + rate limiting middleware
+│   ├── document_processor.rs  # Text extraction + section-aware chunking
+│   ├── document_queue.rs      # Async processing queue with worker pool
 │   ├── embeddings.rs          # Ollama embedding API client
-│   ├── vector_store.rs        # In-memory vector store with cosine similarity
-│   ├── rag_pipeline.rs        # RAG: retrieve chunks + LLM prompt + generation
-│   └── server.rs              # Axum web server, API routes, handlers
+│   ├── vector_store.rs        # Persistent vector store (redb + cosine sim)
+│   ├── rag_pipeline.rs        # RAG: retrieve + generate + streaming
+│   └── server.rs              # Axum web server, all API routes
 ├── static/
-│   └── index.html             # Chat UI (dark theme, file upload, source citations)
+│   └── index.html             # Chat UI (dark theme, SSE streaming)
 ├── sample_data/
 │   └── apple_10k_sample.txt   # Synthetic Apple 10-K for testing
 └── README.md
 ```
 
-## RAG Prompt Design
+## Usage Examples
 
-The system prompt enforces anti-hallucination rules:
+### Upload and process a document
+```bash
+curl -F "file=@apple_10k.pdf" http://localhost:3000/api/upload
+# -> {"success":true, "job_id":"abc-123", "document":"apple_10k.pdf", "message":"..."}
 
-```
-You are a financial document analyst. Answer the user's question based ONLY
-on the provided context from financial filings.
-
-Rules:
-1. If the answer is not in the context, say "This information is not available
-   in the provided document."
-2. Cite the source section for each claim.
-3. For numerical data, present it clearly.
-4. Do not make assumptions or use external knowledge.
+# Check processing status
+curl http://localhost:3000/api/job/abc-123
+# -> {"job_id":"abc-123", "status":"done", "result":{"chunk_count":15}}
 ```
 
-## Verified Test Results
+### Ask a question (blocking)
+```bash
+curl -X POST http://localhost:3000/api/ask \
+  -H "Content-Type: application/json" \
+  -d '{"question":"What are the main risk factors?"}'
+```
 
-Tested with a synthetic Apple 10-K filing (5,200 words):
+### Ask a question (streaming via SSE)
+```bash
+curl -X POST http://localhost:3000/api/ask/stream \
+  -H "Content-Type: application/json" \
+  -d '{"question":"What was total revenue?"}'
+```
 
-| Question | Answer Quality | Retrieval Score | Latency |
-|---|---|---|---|
-| "What are the main risk factors?" | Listed all 6 risks with citations | 0.660 | 62s |
-| "What was total revenue and net income?" | Correct: $383,285M revenue, $96,930M net income | 0.569 | 6.8s |
+### With authentication enabled
+```bash
+# Get token
+TOKEN=$(curl -s -X POST http://localhost:3000/api/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin"}' | jq -r .token)
 
-## Limitations
-
-- **In-memory vector store**: Index is lost on restart (no persistence)
-- **Embedding latency**: ~22s per chunk with nomic-embed-text on CPU
-- **No PDF table extraction**: Financial tables in PDFs are extracted as flat text
-- **Single-user**: Not designed for concurrent multi-user access
-- **No streaming**: LLM response is received in full before returning
-- **LLM accuracy**: llama3.1:8b is an 8B parameter model; larger models would improve answer quality
-
-## Extending the Project
-
-- **Persistent vector store**: Replace in-memory store withsled/redb or ChromaDB
-- **SEC EDGAR integration**: Add automatic 10-K download by ticker symbol
-- **Multi-document comparison**: Index multiple filings, filter by company metadata
-- **Table extraction**: Use Camelot/tabula for structured financial table parsing
-- **Streaming responses**: Use Server-Sent Events for token-by-token LLM output
-- **Hybrid search**: Combine vector similarity with BM25 keyword search
-- **Reranking**: Add a cross-encoder reranker for better retrieval precision
+# Use token
+curl -H "Authorization: Bearer $TOKEN" http://localhost:3000/api/docs
+```
 
 ## License
 

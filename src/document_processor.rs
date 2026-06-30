@@ -10,6 +10,7 @@ pub struct Chunk {
     pub source: String,
     pub section: String,
     pub index: usize,
+    pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
 pub struct DocumentProcessor {
@@ -18,24 +19,15 @@ pub struct DocumentProcessor {
 }
 
 impl DocumentProcessor {
-    pub fn new() -> Self {
-        Self {
-            chunk_size: 800,
-            chunk_overlap: 150,
-        }
-    }
-
-    pub fn with_params(chunk_size: usize, chunk_overlap: usize) -> Self {
+    pub fn new(chunk_size: usize, chunk_overlap: usize) -> Self {
         Self {
             chunk_size,
             chunk_overlap,
         }
     }
 
-    /// Extract text from a file based on its extension.
     pub fn extract_text(&self, file_path: &Path) -> anyhow::Result<String> {
         let ext = file_path.extension().and_then(|e| e.to_str()).unwrap_or("");
-
         match ext {
             "pdf" => self.extract_pdf(file_path),
             "html" | "htm" => self.extract_html(file_path),
@@ -54,9 +46,7 @@ impl DocumentProcessor {
         Ok(self.strip_html(&raw))
     }
 
-    /// Remove HTML tags, scripts, styles; keep text content.
     fn strip_html(&self, html: &str) -> String {
-        // Remove script/style blocks
         let script_re = Regex::new(r"(?is)<(script|style)[^>]*>.*?</\1>").unwrap();
         let tag_re = Regex::new(r"(?s)<[^>]+>").unwrap();
         let entity_re = Regex::new(r"&[a-zA-Z#0-9]+;").unwrap();
@@ -73,15 +63,14 @@ impl DocumentProcessor {
         whitespace_re.replace_all(text, " ").trim().to_string()
     }
 
-    /// Split text into overlapping chunks, with section detection for 10-K style documents.
     pub fn chunk_text(&self, text: &str, source: &str) -> Vec<Chunk> {
         let words: Vec<&str> = text.split_whitespace().collect();
         if words.is_empty() {
             return vec![];
         }
 
-        let section_re =
-            Regex::new(r"(?i)(?:^|\s)(Item\s+\d+[A-Z]?\.?)|(?:^|\s)(PART\s+[IVX]+)").ok();
+        let section_re = Regex::new(r"(?i)(?:^|\s)(Item\s+\d+[A-Z]?\.?)|(?:^|\s)(PART\s+[IVX]+)").ok();
+        let now = chrono::Utc::now();
 
         let mut chunks = Vec::new();
         let mut idx = 0;
@@ -92,20 +81,11 @@ impl DocumentProcessor {
             let chunk_words = &words[pos..end];
             let chunk_text = chunk_words.join(" ");
 
-            // Detect section from chunk content
             let section = if let Some(re) = &section_re {
                 re.captures(&chunk_text)
-                    .map(|c| {
-                        c.get(0)
-                            .map(|m| m.as_str().trim().to_string())
-                            .unwrap_or_else(|| "Unknown".into())
-                    })
+                    .and_then(|c| c.get(0).map(|m| m.as_str().trim().to_string()))
                     .unwrap_or_else(|| {
-                        if pos == 0 {
-                            "Header/Overview".into()
-                        } else {
-                            "Body".into()
-                        }
+                        if pos == 0 { "Header/Overview" } else { "Body" }.into()
                     })
             } else {
                 "Unknown".into()
@@ -117,11 +97,10 @@ impl DocumentProcessor {
                 source: source.to_string(),
                 section,
                 index: idx,
+                created_at: now,
             });
 
             idx += 1;
-
-            // Advance with overlap
             let advance = self.chunk_size.saturating_sub(self.chunk_overlap);
             if advance == 0 {
                 break;

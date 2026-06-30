@@ -1,25 +1,55 @@
 [package]
 name = "financial-rag"
-version = "0.1.0"
+version = "2.0.0"
 edition = "2021"
-description = "AI-Powered Financial Document Analyzer using RAG (Retrieval-Augmented Generation)"
+description = "Enterprise AI-Powered Financial Document Analyzer using RAG (Retrieval-Augmented Generation)"
 
 [dependencies]
+# Async runtime
 tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
+futures = "0.3"
+
+# Web framework
 axum = { version = "0.7", features = ["multipart", "macros"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["fs", "cors"] }
+tower-http = { version = "0.6", features = ["fs", "cors", "trace", "limit", "timeout"] }
+
+# Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-reqwest = { version = "0.12", features = ["json", "multipart"] }
+
+# HTTP client
+reqwest = { version = "0.12", features = ["json", "multipart", "stream"] }
+
+# PDF extraction
 pdf-extract = "0.7"
+
+# Regex
 regex = "1"
+
+# Database - pure Rust embedded DB (no C compiler needed)
+redb = "2"
+bincode = "1.3"
+
+# Auth - pure Rust (no ring/CC needed)
+sha2 = "0.10"
+hmac = "0.12"
+base64 = "0.22"
+
+# Utilities
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
 tracing = "0.1"
-tracing-subscriber = "0.3"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 anyhow = "1"
+thiserror = "1"
 rusttype = "0.3"
+
+# Config
+figment = { version = "0.10", features = ["toml", "env"] }
 
 [profile.release]
 opt-level = 3
+lto = true
+codegen-units = 1
